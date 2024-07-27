@@ -1,9 +1,37 @@
 const bcrypt = require("bcryptjs");
+const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const config = require("../config/auth.config");
 const RefreshToken = require("../models/refreshToken.model");
 const User = require("../models/user.model");
 const { generateJWT } = require("../utils/auth");
+
+exports.signup = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const userAlreadyExists = await User.find({ username });
+
+    if (userAlreadyExists) {
+      return res.status(400).json({
+        message: "Username or email already exists",
+      });
+    }
+
+    const newUser = {
+      id: uuidv4(),
+      username: username,
+      password: bcrypt.hashSync(password, 8),
+    };
+
+    const userRecord = await User.create(newUser);
+
+    return res.status(201).json({ user: userRecord });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ message: "There are some error occurred!", error });
+  }
+};
 
 exports.signin = async (req, res) => {
   const { username, password } = req.body;

@@ -1,8 +1,10 @@
-exports.userData = {
-  id: 1,
-  username: "user01",
-  password: "$2a$10$LmvZPDvhu78il.aNj6yZl.sMErMw4QfU38LTyVGMxHiuQNMMrFXZ2",
-};
+exports.userData = [
+  {
+    id: 1,
+    username: "user01",
+    password: "$2a$10$LmvZPDvhu78il.aNj6yZl.sMErMw4QfU38LTyVGMxHiuQNMMrFXZ2",
+  },
+];
 exports.tokens = [
   {
     id: 1,
