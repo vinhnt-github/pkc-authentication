@@ -109,9 +109,6 @@ const logTimeMiddleware = (req, res, next) => {
 app.use(logTimeMiddleware);
 
 /*==================================ROUTES*==========================*/
-app.get("/", (req, res) => {
-  res.json({ message: "Welcome to bezkoder application." });
-});
 
 app.post("/auth/signup", async (req, res) => {
   try {
