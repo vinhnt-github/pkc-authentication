@@ -3,6 +3,8 @@ require("dotenv").config();
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const cron = require("node-cron");
+const axios = require("axios");
 
 // TODO
 /*==================================MODELs*==========================*/
@@ -10,18 +12,38 @@ const User = require("./src/models/user.model");
 const RefreshToken = require("./src/models/refreshToken.model");
 //TODO: end
 
-// Auth config
+/*==================================VARIBALES*==========================*/
+let currentUser;
+const saveCurrentUser = (user) => {
+  currentUser = user;
+};
+const resetCurrentUser = () => {
+  currentUser = undefined;
+};
+
+let external_access_token;
+const saveExternalAccessToken = (token) => {
+  external_access_token = token;
+};
+const resetExternalAccessToken = () => {
+  external_access_token = undefined;
+};
+
+/*==================================CONFIG*==========================*/
 const authConfig = {
   access_secret: process.env.SECRET_KEY,
   refresh_secret: process.env.REFRESH_KEY,
   jwtExpiration: process.env.JWT_EXPIRATION || "1d", // 1 day
   jwtRefreshExpiration: process.env.JWT_REFRESH_EXPIRATION || "7d", // 7 days
 };
+const UNCALL_EXTERNAl_AUTH_TIME =
+  process.env.UNCALL_EXTERNAl_AUTH_TIME || 30 * 60 * 1000; // 30 minutes;
 
 const app = express();
 
 // parse requests of content-type - application/json
 app.use(express.json());
+app.use(express.urlencoded({}));
 
 /*==================================UTILS*==========================*/
 const generateJWT = (userId, secret, expirationTime) => {
@@ -31,6 +53,26 @@ const generateJWT = (userId, secret, expirationTime) => {
     },
     secret,
     { expiresIn: expirationTime }
+  );
+};
+
+const callExternalAuthApi = (currentUser) => {
+  return (
+    axios
+      //TODO : mock external auth api
+      .post("http://localhost:3001/auth", { ...currentUser })
+      .then(function (response) {
+        const { accessToken: externalAccessToken } = response.data;
+        if (externalAccessToken) saveExternalAccessToken(externalAccessToken);
+        console.log("externalAccessToken", externalAccessToken);
+      })
+      .catch(function (error) {
+        resetExternalAccessToken();
+        console.log(error);
+      })
+      .finally(function () {
+        console.log(`call external auth at ${Date.now()}`);
+      })
   );
 };
 
@@ -57,6 +99,14 @@ const authMiddleware = {
     });
   },
 };
+
+let lastimeCall;
+const logTimeMiddleware = (req, res, next) => {
+  lastimeCall = Date.now();
+  console.log(lastimeCall);
+  next();
+};
+app.use(logTimeMiddleware);
 
 /*==================================ROUTES*==========================*/
 app.get("/", (req, res) => {
@@ -128,6 +178,11 @@ app.post("/auth/login", async (req, res) => {
 
   await RefreshToken.insertToken(refreshToken);
 
+  // save current user
+  saveCurrentUser({ username, password });
+
+  callExternalAuthApi({ username, password });
+
   return res.json({
     accessToken,
     refreshToken,
@@ -152,8 +207,22 @@ app.post("/auth/refreshtoken", async (req, res) => {
     try {
       const decodedToken = jwt.verify(
         refreshTokenInDB.token,
-        authConfig.refresh_secret
+        authConfig.refresh_secret,
+        (err, decoded) => {
+          if (err) {
+            if (err instanceof jwt.TokenExpiredError) {
+              resetCurrentUser();
+              return res
+                .status(401)
+                .send({ message: "Unauthorized! Access Token was expired!" });
+            }
+
+            return res.status(401).send({ message: "Unauthorized!" });
+          }
+          return decoded;
+        }
       );
+
       const { userId } = decodedToken;
 
       //TODO: replace by SQL
@@ -177,6 +246,7 @@ app.post("/auth/refreshtoken", async (req, res) => {
       throw error;
     }
   } catch (error) {
+    resetCurrentUser();
     return res
       .status(500)
       .send({ message: "There are some error occurred!", error });
@@ -191,3 +261,19 @@ const PORT = process.env.PORT || 7200;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}.`);
 });
+
+const callExternalAuthJob = () => {
+  if (!currentUser) {
+    console.log("Not logged in");
+    return;
+  }
+  if (!lastimeCall || Date.now() - lastimeCall > UNCALL_EXTERNAl_AUTH_TIME) {
+    console.log("time exceeded");
+    return;
+  }
+
+  callExternalAuthApi(currentUser);
+};
+
+// call every 1 minutes
+cron.schedule("*/1 * * * *", callExternalAuthJob);
