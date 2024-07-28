@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Document</title>
+  </head>
+  <body>
+    <form id="login-form">
+      <label for="uname"><b>Username</b></label>
+      <input
+        type="text"
+        placeholder="Enter Username"
+        name="username"
+        value="user01"
+        required
+      />
+
+      <label for="psw"><b>Password</b></label>
+      <input
+        type="password"
+        placeholder="Enter Password"
+        name="password"
+        value="123"
+        required
+      />
+
+      <input type="submit" value="Login" />
+    </form>
+
+    <button onclick="logOut()">logOut</button>
+
+    <button onclick="refreshToken()">Refresh Token</button>
+
+    <button onclick="getProtectedData()">Get Protected Data</button>
+    <p id="show-response"></p>
+
+    <script>
+      const setToken = (name, token) => {
+        localStorage.setItem(name, token);
+      };
+      const getToken = (name) => {
+        return localStorage.getItem(name);
+      };
+      const removeToken = (name) => {
+        localStorage.removeItem(name);
+      };
+
+      const loginFunc = (username, password) => {
+        fetch("http://localhost:7200/auth/login", {
+          headers: {
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+          body: JSON.stringify({ username, password }),
+        })
+          .then((res) => res.json())
+          .then((data) => {
+            const { accessToken, refreshToken } = data;
+            setToken("accessToken", accessToken);
+            setToken("refreshToken", refreshToken);
+          });
+      };
+
+      const loginForm = document.getElementById("login-form");
+
+      loginForm.addEventListener("submit", async function (event) {
+        event.preventDefault();
+        const formData = new FormData(loginForm);
+        const username = formData.get("username");
+        const password = formData.get("password");
+        await loginFunc(username, password);
+      });
+
+      // refresh token
+      async function refreshToken() {
+        const refreshToken = getToken("refreshToken");
+        const response = await fetch(
+          "http://localhost:7200/auth/refreshtoken",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ refreshToken }),
+          }
+        );
+        const data = await response.json();
+        if (response.ok) {
+          localStorage.setItem("accessToken", data.accessToken);
+          return data.accessToken;
+        } else {
+          throw new Error(data.message);
+        }
+      }
+
+      async function fetchWithAuth(url, options = {}) {
+        let response = await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            ...(getToken("accessToken")
+              ? { "x-access-token": getToken("accessToken") }
+              : {}),
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (response.status === 401) {
+          // Token expired
+          const newAccessToken = await refreshToken();
+          response = await fetch(url, {
+            ...options,
+            headers: {
+              ...options.headers,
+              "Content-Type": "application/json",
+              ...(getToken("accessToken")
+                ? { "x-access-token": getToken("accessToken") }
+                : {}),
+            },
+          });
+        }
+
+        return response;
+      }
+
+      // get protected data
+
+      const showResponseElm = document.getElementById("show-response");
+      const showRespose = (res) => {
+        showResponseElm.textContent = res;
+      };
+
+      const getProtectedData = (username, password) => {
+        fetchWithAuth("http://localhost:7200/protected", {
+          method: "GET",
+        })
+          .then((res) => {
+            if (!res.ok)
+              return res.json().then((data) => {
+                throw new Error(data.message);
+              });
+            return res.text();
+          })
+          .then((data) => {
+            showRespose(data);
+          })
+          .catch((err) => {
+            console.log("err", err);
+            showRespose(err.message);
+          });
+      };
+
+      const logOut = () => {
+        fetchWithAuth("http://localhost:7200/auth/logout", {
+          method: "POST",
+        })
+          .then((res) => {
+            if (!res.ok)
+              return res.json().then((data) => {
+                throw new Error(data.message);
+              });
+            return res.json();
+          })
+          .then((data) => {
+            showRespose(data.message);
+            removeToken("accessToken");
+            removeToken("refreshToken");
+          })
+          .catch((err) => {
+            showRespose(err.message);
+          });
+      };
+    </script>
+  </body>
+</html>

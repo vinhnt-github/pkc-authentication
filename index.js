@@ -5,6 +5,9 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const cron = require("node-cron");
 const axios = require("axios");
+const cors = require("cors");
+const cookieParser = require("cookie-parser");
+const ms = require("ms");
 
 // TODO
 /*==================================MODELs*==========================*/
@@ -39,7 +42,15 @@ const authConfig = {
 const UNCALL_EXTERNAl_AUTH_TIME =
   process.env.UNCALL_EXTERNAl_AUTH_TIME || 30 * 60 * 1000; // 30 minutes;
 
+const corsOptions = {
+  origin: "*",
+  credentials: true,
+};
+
 const app = express();
+
+app.use(cors(corsOptions));
+app.use(cookieParser());
 
 // parse requests of content-type - application/json
 app.use(express.json());
@@ -94,7 +105,7 @@ const authMiddleware = {
 
         return res.status(401).send({ message: "Unauthorized!" });
       }
-      req.userId = decoded.id;
+      req.userId = decoded.userId;
       next();
     });
   },
@@ -187,14 +198,14 @@ app.post("/auth/login", async (req, res) => {
 });
 
 app.post("/auth/refreshtoken", async (req, res) => {
-  const { refreshtoken } = req.body;
+  const { refreshToken } = req.body;
 
-  if (!refreshtoken) {
-    return res.status(204);
+  if (!refreshToken) {
+    return res.status(403).send({ message: "No refresh token provided!" });
   }
   try {
     //TODO: replace by SQL
-    const refreshTokenInDB = await RefreshToken.find(refreshtoken);
+    const refreshTokenInDB = await RefreshToken.find(refreshToken);
     //TODO: end
 
     if (!refreshTokenInDB) {
@@ -237,7 +248,7 @@ app.post("/auth/refreshtoken", async (req, res) => {
       );
       return res.status(200).json({
         accessToken,
-        expiresAt: new Date(Date.now() + authConfig.jwtExpiration),
+        expiresAt: new Date(Date.now() + ms(authConfig.jwtExpiration)),
       });
     } catch (error) {
       throw error;
@@ -248,6 +259,14 @@ app.post("/auth/refreshtoken", async (req, res) => {
       .status(500)
       .send({ message: "There are some error occurred!", error });
   }
+});
+
+app.post("/auth/logout", [authMiddleware.verifyToken], async (req, res) => {
+  const { userId } = req;
+  //TODO: Detele refereshToken theo UserId
+  return res.json({
+    message: "logout success",
+  });
 });
 
 app.get("/protected", [authMiddleware.verifyToken], (req, res) => {
